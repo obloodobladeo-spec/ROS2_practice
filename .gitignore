@@ -1,0 +1,30 @@
+# ROS 2 colcon build artifacts
+build/
+install/
+log/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+venv/
+.venv/
+
+# VS Code
+.vscode/
+
+# C/C++ build/cache files
+*.o
+*.so
+*.a
+CMakeCache.txt
+CMakeFiles/
+
+# OS / editor temporary files
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
