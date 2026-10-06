@@ -1,47 +1,42 @@
-# lds_mock_ros
+# LDS 모의 스캔 발행기
 
-ROS 2 Humble package for generating randomized LDS-style laser scans. The node
-publishes `sensor_msgs/msg/LaserScan` on `/scan` every two seconds by default.
-Each scan contains 360 ranges from a rectangular room whose front, rear, left,
-and right wall distances change on every publication.
+ROS 2 Humble 패키지입니다. `sensor_msgs/msg/LaserScan`의 거리값 360개를 무작위로 만들어 기본적으로 2초마다 `/scan`에 발행합니다. 앞·뒤·좌·우 벽까지의 거리를 매번 바꾸므로 주행 로직 연습에 사용할 수 있습니다.
 
-## Run the mock ROS PC publisher
+## 빌드
 
 ```bash
+cd ~/ros2_ws
 source /opt/ros/humble/setup.bash
+colcon build --packages-select lds_mock_ros --symlink-install
 source install/setup.bash
+```
+
+## 모의 데이터 실행
+
+```bash
 ros2 launch lds_mock_ros mock_scan.launch.py
 ```
 
-To also expose ROS topics through rosbridge WebSocket on port 9090, install
-`rosbridge_server` on the ROS PC and run:
+원격 PC에서 `roslibpy`로 구독하려면 rosbridge도 함께 실행합니다.
 
 ```bash
 ros2 launch lds_mock_ros mock_remote.launch.py start_rosbridge:=true
 ```
 
-The `mock_remote.launch.py` file defaults to the publisher only, so it can be
-used without rosbridge installed. For a real TurtleBot3, launch the robot's
-normal sensor stack instead of the mock publisher; it should publish the same
-`/scan` `sensor_msgs/msg/LaserScan` interface. The remote bridge endpoint is
-`ws://<ROS_PC_IP>:9090`.
+rosbridge의 기본 주소는 `ws://<ROS_PC_IP>:9090`입니다. `mock_remote.launch.py`는 기본적으로 발행기만 실행하므로 rosbridge가 필요하면 위와 같이 `start_rosbridge:=true`를 지정해야 합니다.
 
-## Use a real TurtleBot3 lidar
+## 실제 라이다를 사용할 때
 
-On the ROS PC, start the robot's normal bringup so it publishes `/scan`, then
-open another sourced terminal and start rosbridge only:
+Gazebo나 실제 TurtleBot3가 `/scan`을 발행 중이라면 모의 발행기를 실행하지 않습니다. 기존 토픽을 원격 프로그램에 연결하는 rosbridge만 시작합니다.
 
 ```bash
 ros2 launch lds_mock_ros real_bridge.launch.py
 ```
 
-This launch does not start the mock publisher. It exposes the existing ROS
-topics over WebSocket on port 9090. The remote PC can connect to
-`ws://<ROS_PC_IP>:9090`.
-
-For mock scans, the `frame_id` parameter defaults to `laser`; set it to match
-the actual lidar frame when testing the publisher:
+모의 스캔의 `frame_id`를 바꿔 시험할 수도 있습니다.
 
 ```bash
 ros2 launch lds_mock_ros mock_scan.launch.py frame_id:=base_scan
 ```
+
+동일한 `/scan`에 모의 발행기와 Gazebo 라이다를 동시에 연결하면 데이터 출처가 섞입니다. 주행에 사용할 센서 하나만 선택하세요.

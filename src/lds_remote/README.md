@@ -1,120 +1,79 @@
-# LDS remote driving practice
+# 원격 LDS 주행과 MySQL 데이터 추출
 
-This directory is the **remote PC** side of the exercise. It subscribes to
-`sensor_msgs/LaserScan` on `/scan` through rosbridge, publishes
-`geometry_msgs/Twist` on `/cmd_vel`, inserts each 360-distance scan and chosen
-action into MySQL, and exports a 361-column CSV. The ROS PC publisher is in the
-separate `../lds_mock_ros` package.
+`lds_remote`는 ROS 2 패키지가 아닌 원격 Python 프로그램입니다. `roslibpy`로 rosbridge의 `sensor_msgs/LaserScan`을 받아 주행 액션을 결정하고 `geometry_msgs/Twist`를 `/cmd_vel`에 발행합니다. DB 사용 모드에서는 거리값 360개와 액션을 `lds_practice.lidardata`에 저장합니다.
 
-## 1. ROS PC: publish mock scans and run rosbridge
+## 설치
 
-Build `lds_mock_ros` and `rosbridge_server` in the ROS 2 Humble workspace, then:
+```bash
+cd ~/ros2_ws/src/lds_remote
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+```
+
+`venv` 명령이 없는 환경에서는 `python3 -m pip install --user virtualenv`를 실행한 뒤 `python3 -m virtualenv .venv`를 사용할 수 있습니다.
+
+## Gazebo의 실제 라이다로 주행
+
+터미널 1에서 TurtleBot3 Gazebo를 시작합니다.
 
 ```bash
 source /opt/ros/humble/setup.bash
-source ~/ros2_ws/install/setup.bash
-ros2 launch lds_mock_ros mock_remote.launch.py start_rosbridge:=true
-```
-
-The mock publisher sends one 360-point scan every two seconds. rosbridge listens
-on WebSocket port `9090`. If rosbridge is not installed on the ROS PC, install
-the Humble `rosbridge_server` package or clone and build the Humble branch of
-`https://github.com/RobotWebTools/rosbridge_suite.git`.
-
-## 2. MySQL: create a new practice database
-
-On the machine that will store the scans, run the project schema with a MySQL
-administrator account:
-
-```bash
-sudo mysql < schema.sql
-```
-
-This creates the **new** `lds_practice` database, its `lidardata` table, and
-grants the existing local MySQL account `rosuser` SELECT and INSERT access.
-The table has `id`, a JSON `ranges` array, a UTC `when` datetime, and `action`.
-The existing `rosdb` database is not used. If your MySQL account or host differs,
-adjust the GRANT in `schema.sql` before running it.
-
-## 3. Remote PC: install and run
-
-From this `lds_remote` directory, install Python dependencies in an isolated
-environment. If `python3 -m venv .venv` is unavailable, install `virtualenv`
-with `python3 -m pip install --user virtualenv` and run
-`python3 -m virtualenv .venv` instead.
-
-```bash
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-.venv/bin/python -m lds_remote.drive --ros-host <ROS_PC_IP>
-```
-
-The database defaults to `rosuser` on `localhost:3306` in `lds_practice`.
-When `LDS_DB_PASSWORD` is unset, the program prompts for the MySQL password
-without showing it on screen. For unattended runs, set `LDS_DB_PASSWORD` in
-the environment. `LDS_DB_USER`, `LDS_DB_NAME`, `LDS_DB_HOST`, and `LDS_DB_PORT`
-override the other database defaults.
-
-Use `--ros-host localhost` when both roles run on one computer. If MySQL runs
-on a different computer from this Python process, set `LDS_DB_HOST` to that
-computer's reachable address and grant the MySQL user access from this host.
-The ROS topics can be changed with `--scan-topic` and `--cmd-topic`.
-Use `--no-db` to test driving without a MySQL connection or INSERTs.
-
-With the default threshold of `0.75` m and forward speed of `0.07` m/s, the
-controller checks the front and both front corners before moving. It rotates
-in place toward the more open side when blocked, and stops when both sides are
-too close. Invalid or stale scans produce a stop command.
-Stop the process with Ctrl+C; it publishes a final zero `Twist`.
-
-## 4. Export the dataset
-
-This command also prompts for the database password when it is unset:
-
-```bash
-.venv/bin/python -m lds_remote.export_csv --output lidardata.csv
-```
-
-The output has `range_000` through `range_359` plus `action`: exactly 361
-columns. `when` is stored in MySQL but intentionally omitted from this training
-CSV to match the requested shape.
-
-## 5. Replace mock scans with the real TurtleBot3 lidar
-
-Stop `mock_remote.launch.py`, start the real robot's normal bringup so it
-publishes `/scan` as `sensor_msgs/LaserScan`, and run only rosbridge on the ROS
-PC:
-
-```bash
-ros2 launch lds_mock_ros real_bridge.launch.py
-```
-
-Run the **same** remote command from step 3. Its angle conversion uses the
-LaserScan `angle_min` and `angle_increment`, so it also handles a real scan that
-starts at `-pi` or has a point count other than 360. It normalizes the scan to
-360 one-degree bins before driving and storing it.
-
-### Gazebo Waffle Pi with its actual lidar
-
-Use `waffle_pi` and `/scan` for obstacle avoidance in the Gazebo world:
-
-```bash
+source ~/turtlebot3_ws/install/setup.bash
 export TURTLEBOT3_MODEL=waffle_pi
 ros2 launch turtlebot3_gazebo turtlebot3_world.launch.py
 ```
 
-In a second ROS terminal start `ros2 launch lds_mock_ros real_bridge.launch.py`
-unless rosbridge is already running. Then start the remote driver:
+터미널 2에서 rosbridge를 시작합니다.
 
 ```bash
-.venv/bin/python -m lds_remote.drive --ros-host localhost --scan-topic /scan
+source /opt/ros/humble/setup.bash
+source ~/ros2_ws/install/setup.bash
+ros2 launch lds_mock_ros real_bridge.launch.py
 ```
 
-`/mock_scan` contains JSON replay data unrelated to Gazebo obstacles. Using it
-to drive a Gazebo robot can make the robot hit walls. The real Gazebo lidar
-publishes `/scan` at approximately 5 Hz.
+터미널 3에서 주행 프로그램을 실행합니다. 아래 명령은 DB를 전혀 사용하지 않습니다.
 
-## Tests
+```bash
+cd ~/ros2_ws/src/lds_remote
+.venv/bin/python -m lds_remote.drive \
+  --ros-host localhost --scan-topic /scan --no-db
+```
+
+DB 저장도 원하면 `--no-db`를 빼고 실행합니다. 기본 DB 연결은 `localhost:3306`의 `lds_practice`, 사용자 `rosuser`입니다. `LDS_DB_PASSWORD`가 설정되지 않았다면 시작할 때 비밀번호를 묻습니다. 다른 환경에서는 `LDS_DB_HOST`, `LDS_DB_PORT`, `LDS_DB_NAME`, `LDS_DB_USER`를 지정할 수 있습니다. rosbridge 포트가 `9090`이 아니라면 `--ros-port`를 사용하세요.
+
+기본 안전 거리는 `0.75 m`, 직진 속도는 `0.07 m/s`입니다. 전방과 전방 양쪽 모서리를 검사하고, 막히면 열린 방향으로 제자리 회전합니다. 영상과 관계없는 JSON 모의 스캔 `/mock_scan`으로 Gazebo 벽을 피할 수는 없습니다. 종료할 때 `Ctrl+C`를 누르면 정지 명령을 보냅니다.
+
+## DB 구조와 CSV
+
+DB를 처음 준비할 때만 MySQL 관리자 계정으로 `schema.sql`을 실행합니다. 기존 `rosdb`를 사용하지 않고 별도 `lds_practice`를 만듭니다. `rosuser` 계정은 이미 생성되어 있어야 합니다.
+
+```bash
+cd ~/ros2_ws/src/lds_remote
+sudo mysql < schema.sql
+```
+
+`lidardata`에는 정수 `id`, JSON `ranges`, UTC `when`, 문자열 `action`이 있습니다. 내보내기 프로그램의 조회문은 실습 예제와 같습니다.
+
+```sql
+SELECT ranges, action FROM lidardata
+```
+
+CSV 파일을 만들려면 다음 명령을 사용합니다.
+
+```bash
+.venv/bin/python -m lds_remote.export_csv --output output.csv
+```
+
+결과에는 `range_000`부터 `range_359`까지의 거리값 360열과 `action` 1열, 총 361열이 있습니다. `when`은 DB에만 남기고 이 CSV에는 넣지 않습니다. 비밀번호가 환경 변수에 없다면 내보내기 실행 시에도 입력받습니다.
+
+## 자주 겪은 문제
+
+1. **문제:** `RosTimeoutError`. **원인:** rosbridge가 실행되지 않았거나 포트가 다릅니다. **해결:** `real_bridge.launch.py`를 시작하고 `--ros-port`를 확인합니다.
+2. **문제:** `float(None)`로 스캔이 무효가 됐습니다. **원인:** rosbridge가 무한 거리값을 JSON `null`로 보냈습니다. **해결:** 현재 코드는 이를 `range_max`로 처리합니다.
+3. **문제:** 로봇이 Gazebo 벽에 부딪혔습니다. **원인:** `/mock_scan`은 실제 벽과 무관합니다. **해결:** `--scan-topic /scan`을 사용합니다.
+4. **문제:** DB 기록이 1970년이었습니다. **원인:** Gazebo 시뮬레이션 시각을 실제 날짜로 해석했습니다. **해결:** 새 기록에는 실제 UTC 시각을 사용합니다. 이전 행은 자동 수정하지 않습니다.
+
+## 테스트
 
 ```bash
 .venv/bin/python -m unittest discover -s tests -v
