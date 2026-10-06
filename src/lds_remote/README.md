@@ -46,29 +46,30 @@ with `python3 -m pip install --user virtualenv` and run
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-export LDS_DB_USER=rosuser
-export LDS_DB_NAME=lds_practice
-export LDS_DB_HOST=localhost
-read -rsp 'MySQL password: ' LDS_DB_PASSWORD; echo
-export LDS_DB_PASSWORD
 .venv/bin/python -m lds_remote.drive --ros-host <ROS_PC_IP>
 ```
+
+The database defaults to `rosuser` on `localhost:3306` in `lds_practice`.
+When `LDS_DB_PASSWORD` is unset, the program prompts for the MySQL password
+without showing it on screen. For unattended runs, set `LDS_DB_PASSWORD` in
+the environment. `LDS_DB_USER`, `LDS_DB_NAME`, `LDS_DB_HOST`, and `LDS_DB_PORT`
+override the other database defaults.
 
 Use `--ros-host localhost` when both roles run on one computer. If MySQL runs
 on a different computer from this Python process, set `LDS_DB_HOST` to that
 computer's reachable address and grant the MySQL user access from this host.
-The other connection variables are `LDS_DB_PORT` (default `3306`) and
-`ROSBRIDGE_HOST` (default `localhost`). The ROS topics can be changed with
-`--scan-topic` and `--cmd-topic`.
+The ROS topics can be changed with `--scan-topic` and `--cmd-topic`.
+Use `--no-db` to test driving without a MySQL connection or INSERTs.
 
-With the default threshold of `0.5` m, the controller drives forward when the
-front is clear, turns toward the more open side when blocked, and stops if the
-front and both sides are blocked. Invalid or stale scans produce a stop command.
+With the default threshold of `0.75` m and forward speed of `0.07` m/s, the
+controller checks the front and both front corners before moving. It rotates
+in place toward the more open side when blocked, and stops when both sides are
+too close. Invalid or stale scans produce a stop command.
 Stop the process with Ctrl+C; it publishes a final zero `Twist`.
 
 ## 4. Export the dataset
 
-Using the same database environment variables:
+This command also prompts for the database password when it is unset:
 
 ```bash
 .venv/bin/python -m lds_remote.export_csv --output lidardata.csv
@@ -92,6 +93,26 @@ Run the **same** remote command from step 3. Its angle conversion uses the
 LaserScan `angle_min` and `angle_increment`, so it also handles a real scan that
 starts at `-pi` or has a point count other than 360. It normalizes the scan to
 360 one-degree bins before driving and storing it.
+
+### Gazebo Waffle Pi with its actual lidar
+
+Use `waffle_pi` and `/scan` for obstacle avoidance in the Gazebo world:
+
+```bash
+export TURTLEBOT3_MODEL=waffle_pi
+ros2 launch turtlebot3_gazebo turtlebot3_world.launch.py
+```
+
+In a second ROS terminal start `ros2 launch lds_mock_ros real_bridge.launch.py`
+unless rosbridge is already running. Then start the remote driver:
+
+```bash
+.venv/bin/python -m lds_remote.drive --ros-host localhost --scan-topic /scan
+```
+
+`/mock_scan` contains JSON replay data unrelated to Gazebo obstacles. Using it
+to drive a Gazebo robot can make the robot hit walls. The real Gazebo lidar
+publishes `/scan` at approximately 5 Hz.
 
 ## Tests
 

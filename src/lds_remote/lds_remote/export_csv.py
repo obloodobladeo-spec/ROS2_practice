@@ -30,7 +30,7 @@ def main():
     connection = connect_database()
     try:
         with connection.cursor() as cursor:
-            cursor.execute("SELECT `ranges`, `action` FROM lidardata ORDER BY id")
+            cursor.execute("SELECT ranges, action FROM lidardata")
             frame = rows_to_dataframe(cursor.fetchall())
     finally:
         connection.close()

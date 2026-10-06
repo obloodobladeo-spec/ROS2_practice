@@ -27,7 +27,9 @@ def normalize_scan(scan):
     result = [range_max] * POINT_COUNT
     observed = [False] * POINT_COUNT
     for index, raw_distance in enumerate(raw_ranges):
-        distance = float(raw_distance)
+        # JSON has no infinity value. rosbridge sends Gazebo's +inf
+        # (no return within range_max) as null.
+        distance = range_max if raw_distance is None else float(raw_distance)
         if math.isnan(distance) or distance < range_min:
             continue
         if math.isinf(distance):
@@ -54,20 +56,39 @@ def sector_distance(ranges, degrees):
     return median(ranges[degree % POINT_COUNT] for degree in degrees)
 
 
-def choose_action(ranges, safe_distance=0.5):
+def choose_action(ranges, safe_distance=0.75):
     """Choose a simple collision-avoidance action from 360 distances."""
     if len(ranges) != POINT_COUNT:
         raise ValueError("a driving view must have exactly 360 distances")
     if safe_distance <= 0:
         raise ValueError("safe_distance must be positive")
 
-    front = sector_distance(ranges, list(range(350, 360)) + list(range(10)))
-    left = sector_distance(ranges, range(80, 100))
-    right = sector_distance(ranges, range(260, 280))
+    # A median over the whole front arc can hide a narrow obstacle. Check
+    # three smaller arcs, including the front corners of the wider Waffle Pi.
+    front = min(
+        sector_distance(ranges, range(330, 350)),
+        sector_distance(ranges, list(range(350, 360)) + list(range(10))),
+        sector_distance(ranges, range(10, 30)),
+    )
+    left = min(
+        sector_distance(ranges, range(30, 70)),
+        sector_distance(ranges, range(70, 110)),
+    )
+    right = min(
+        sector_distance(ranges, range(290, 330)),
+        sector_distance(ranges, range(250, 290)),
+    )
     if front >= safe_distance:
         return "go_forward"
-    if left < safe_distance and right < safe_distance:
+    # A corridor can be narrower than the forward stopping distance while
+    # still leaving room to rotate in place.
+    turn_clearance = max(0.32, safe_distance * 0.5)
+    if left < turn_clearance and right < turn_clearance:
         return "stop"
+    if left < turn_clearance:
+        return "turn_right"
+    if right < turn_clearance:
+        return "turn_left"
     return "turn_left" if left >= right else "turn_right"
 
 

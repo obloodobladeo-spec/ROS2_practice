@@ -14,37 +14,43 @@ from lds_remote.scan import choose_action, normalize_scan, twist_for_action
 
 
 def scan_timestamp(message):
-    """Return the LaserScan header time as a naive UTC MySQL datetime."""
+    """Return a UTC MySQL datetime, using wall time for simulated stamps."""
     stamp = message.get("header", {}).get("stamp", {})
     seconds = stamp.get("sec", stamp.get("secs"))
     nanoseconds = stamp.get("nanosec", stamp.get("nsecs", 0))
-    if seconds is None:
+    if seconds is None or float(seconds) < 946684800:
         return datetime.now(timezone.utc).replace(tzinfo=None)
     timestamp = float(seconds) + float(nanoseconds) / 1_000_000_000
     return datetime.fromtimestamp(timestamp, timezone.utc).replace(tzinfo=None)
 
 
-def parse_args():
+def parse_args(argv=None):
     """Parse connection, topic, and motion settings."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ros-host", default=os.environ.get("ROSBRIDGE_HOST", "localhost"))
     parser.add_argument("--ros-port", type=int, default=9090)
     parser.add_argument("--scan-topic", default="/scan")
     parser.add_argument("--cmd-topic", default="/cmd_vel")
-    parser.add_argument("--safe-distance", type=float, default=0.5)
-    parser.add_argument("--linear-speed", type=float, default=0.12)
-    parser.add_argument("--angular-speed", type=float, default=0.7)
+    parser.add_argument("--no-db", action="store_true",
+                        help="drive without connecting to or writing MySQL")
+    parser.add_argument("--safe-distance", type=float, default=0.75)
+    parser.add_argument("--linear-speed", type=float, default=0.07)
+    parser.add_argument("--angular-speed", type=float, default=0.8)
     parser.add_argument("--stale-timeout", type=float, default=3.0)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if args.stale_timeout <= 0:
         parser.error("--stale-timeout must be positive")
+    if args.safe_distance <= 0:
+        parser.error("--safe-distance must be positive")
+    if args.linear_speed < 0 or args.angular_speed < 0:
+        parser.error("speeds must be non-negative")
     return args
 
 
 def run():
     """Keep the control loop running until interrupted or a dependency fails."""
     args = parse_args()
-    connection = connect_database()
+    connection = None if args.no_db else connect_database()
     ros = roslibpy.Ros(host=args.ros_host, port=args.ros_port)
     incoming = queue.Queue(maxsize=256)
     queue_overflow = threading.Event()
@@ -92,7 +98,8 @@ def run():
                 print(f"Invalid scan: {exc}; stop", flush=True)
                 continue
 
-            save_scan(connection, ranges, action, measured_at)
+            if connection is not None:
+                save_scan(connection, ranges, action, measured_at)
             cmd_topic.publish(roslibpy.Message(twist_for_action(
                 action, args.linear_speed, args.angular_speed
             )))
@@ -106,7 +113,8 @@ def run():
         if cmd_topic is not None and ros.is_connected:
             cmd_topic.unadvertise()
         ros.terminate()
-        connection.close()
+        if connection is not None:
+            connection.close()
 
 
 if __name__ == "__main__":

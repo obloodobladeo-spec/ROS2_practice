@@ -2,17 +2,23 @@
 
 import json
 import os
+import sys
 from datetime import datetime, timezone
+from getpass import getpass
 
 import pymysql
 
 
 def connect_database():
-    """Connect using environment variables, without storing secrets in code."""
-    user = os.environ.get("LDS_DB_USER")
+    """Connect using environment variables or an interactive password prompt."""
+    user = os.environ.get("LDS_DB_USER", "rosuser")
     password = os.environ.get("LDS_DB_PASSWORD")
-    if not user or password is None:
-        raise ValueError("set LDS_DB_USER and LDS_DB_PASSWORD")
+    if not user:
+        raise ValueError("LDS_DB_USER cannot be empty")
+    if password is None:
+        if not sys.stdin.isatty():
+            raise ValueError("set LDS_DB_PASSWORD for non-interactive use")
+        password = getpass("MySQL password: ")
     return pymysql.connect(
         host=os.environ.get("LDS_DB_HOST", "localhost"),
         port=int(os.environ.get("LDS_DB_PORT", "3306")),
