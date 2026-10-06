@@ -39,6 +39,29 @@ ros2 run opencv_pkg opencv_follow --no-display
 
 `--speed`, `--gain`, `--max-turn`, `--target-fraction`, `--min-area`, `--image-topic`, `--cmd-topic`으로 동작을 조정할 수 있습니다. 기본값은 설치된 Waffle Pi Autorace 월드의 카메라에 맞췄습니다.
 
+## 카메라 영상 변환 기본 예제
+
+Gazebo를 위의 `waffle_pi` 설정으로 실행한 뒤, 새 터미널에서 아래 두 명령 중 하나를 실행합니다. 두 예제 모두 `/camera/image_raw`를 구독해 화면에 표시하며, 주행 명령이나 데이터베이스 기록은 하지 않습니다.
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/ros2_ws/install/setup.bash
+ros2 run opencv_pkg camera_cv_bridge
+```
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/ros2_ws/install/setup.bash
+ros2 run opencv_pkg camera_numpy
+```
+
+창에서 `q` 또는 `Esc`를 누르면 종료합니다. 각각 별도 창이 열리므로 처음에는 하나씩 실행해 보세요.
+
+- [`camera_cv_bridge.py`](opencv_pkg/camera_cv_bridge.py): `CvBridge.imgmsg_to_cv2(message, desired_encoding='bgr8')` 한 줄로 ROS `Image`를 OpenCV 배열로 바꿉니다. 색상 순서도 라이브러리가 처리합니다.
+- [`camera_numpy.py`](opencv_pkg/camera_numpy.py): `Image.data`의 1차원 바이트를 NumPy로 읽습니다. `height`와 `step`으로 줄을 나누고, 줄 끝 여백을 제외한 뒤 `(height, width, 3)` 모양으로 만듭니다. `rgb8` 영상이면 RGB를 OpenCV용 BGR로 바꿉니다. 이 기본 예제는 `rgb8`과 `bgr8`만 지원합니다.
+
+ROS `Image`는 픽셀 값(`data`), 가로·세로 크기(`width`, `height`), 한 줄의 바이트 수(`step`), 색상 형식(`encoding`)을 따로 담습니다. 두 파일의 주석을 위에서 아래로 읽으면 같은 영상을 각각 어떻게 변환하는지 볼 수 있습니다.
+
 ## 실제로 겪은 문제
 
 1. **문제:** `/camera/image_raw`가 목록에 있지만 영상이 안 나왔습니다. **원인:** `burger`에는 카메라 발행자가 없었고 rqt 구독 때문에 토픽 이름만 보였습니다. **해결:** `TURTLEBOT3_MODEL=waffle_pi`로 Gazebo를 다시 시작하고 `ros2 topic info /camera/image_raw`에서 발행자를 확인합니다.

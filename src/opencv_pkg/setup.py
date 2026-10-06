@@ -23,6 +23,8 @@ setup(
     entry_points={
         'console_scripts': [
             'opencv_follow = opencv_pkg.opencv_follow:main',
+            'camera_cv_bridge = opencv_pkg.camera_cv_bridge:main',
+            'camera_numpy = opencv_pkg.camera_numpy:main',
         ],
     },
 )
